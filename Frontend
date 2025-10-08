@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nutrition Plan Visualization & BMI Diagnosis</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Load Chart.js for visualization -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        /* Custom styles for aesthetic font and centered container */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f4f7f9; /* Light background */
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .container {
+            max-width: 90%;
+            margin: 20px auto;
+        }
+        /* Custom card style for recommendations */
+        .recommendation-card {
+            border-left: 5px solid;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin-top: 1rem;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="app" class="container bg-white p-8 rounded-xl shadow-2xl transition-all duration-300 md:w-4/5 lg:w-3/5">
+        
+        <h1 class="text-3xl font-extrabold text-blue-700 mb-2 text-center">
+            Nutrition & BMI Diagnosis Tool
+        </h1>
+        <p class="text-center text-gray-500 mb-6">
+            Get your BMI diagnosis, personalized macros, and tailored diet plan.
+        </p>
+
+        <!-- Input Form with Gender -->
+        <div class="space-y-4">
+            <input type="number" id="weight" placeholder="Weight (kg)" value="100" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 transition-shadow">
+            <input type="number" id="height" placeholder="Height (m)" value="1.75" step="0.01" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 transition-shadow">
+            <select id="gender" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 transition-shadow">
+                <option value="Male">Male</option>
+                <option value="Female">Female</option>
+            </select>
+            <button onclick="processData()" class="w-full bg-green-500 text-white p-3 rounded-lg font-semibold hover:bg-green-600 transition-colors shadow-md hover:shadow-lg transform hover:scale-[1.01] active:scale-95">
+                Diagnose & Calculate Plan
+            </button>
+        </div>
+
+        <!-- Visualization Area -->
+        <div id="results-area" class="mt-8 pt-4 border-t border-gray-200 hidden">
+            <!-- BMI Diagnosis Card -->
+            <div id="bmiDiagnosis" class="p-4 rounded-xl mb-6 shadow-md border">
+                <p class="text-sm font-semibold text-gray-600">Your BMI Score:</p>
+                <div class="flex items-end justify-between">
+                    <span id="bmiScore" class="text-5xl font-extrabold text-blue-600">--</span>
+                    <span id="bmiClassOutput" class="text-xl font-bold px-3 py-1 rounded-full text-white">--</span>
+                </div>
+            </div>
+
+            <!-- Macro Summary & Chart -->
+            <h2 class="text-xl font-bold text-gray-700 mb-4 text-center">
+                Daily Nutrition Targets
+            </h2>
+
+            <!-- Detailed Grams Summary -->
+            <div id="gramsSummary" class="mt-6 p-4 bg-blue-50 rounded-lg grid grid-cols-2 md:grid-cols-4 justify-around text-center font-medium gap-4">
+                <!-- Data will be inserted here by JavaScript -->
+            </div>
+            
+            <!-- Chart Canvas -->
+            <div class="h-64 flex justify-center items-center mt-6">
+                <canvas id="macroChart"></canvas>
+            </div>
+            
+            <!-- Diet Recommendations Section (NEW) -->
+            <h2 class="text-xl font-bold text-gray-700 mt-8 mb-4 border-t pt-4">
+                Personalized Diet Recommendations
+            </h2>
+            <div id="recommendations" class="space-y-4">
+                <!-- Advice will be inserted here by JavaScript -->
+            </div>
+        </div>
+
+         <!-- Message Box (for alerts) -->
+         <div id="messageBox" class="mt-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded-lg hidden"></div>
+
+    </div>
+
+    <script>
+        let macroChart;
+        
+        // --- Core Logic Functions ---
+
+        /**
+         * 1. Calculates BMI and returns the classification.
+         */
+        function classifyBmi(weight_kg, height_m) {
+            if (height_m === 0) return { bmi: 0, class: "Invalid Height" };
+            const bmi = weight_kg / (height_m * height_m);
+            const roundedBmi = parseFloat(bmi.toFixed(2));
+            
+            let bmiClass = "Unknown";
+            if (bmi < 18.5) {
+                bmiClass = "Underweight";
+            } else if (bmi >= 18.5 && bmi < 25) {
+                bmiClass = "Normal";
+            } else if (bmi >= 25 && bmi < 30) {
+                bmiClass = "Overweight";
+            } else if (bmi >= 30 && bmi < 35) {
+                bmiClass = "Obese Class 1";
+            } else if (bmi >= 35 && bmi < 40) {
+                bmiClass = "Obese Class 2";
+            } else if (bmi >= 40) {
+                bmiClass = "Obese Class 3";
+            }
+            
+            return { bmi: roundedBmi, class: bmiClass };
+        }
+
+        /**
+         * 2. Calculates personalized daily macronutrient recommendations (in grams).
+         * Uses Mifflin-St Jeor BMR for better accuracy with gender. (Age assumed 30)
+         */
+        function calculateMacros(weight_kg, height_m, gender, bmi_class) {
+            // Using age 30 for consistency, this is the Mifflin-St Jeor formula
+            const height_cm = height_m * 100;
+            let bmr_kcal;
+            
+            if (gender === 'Male') {
+                bmr_kcal = (10 * weight_kg) + (6.25 * height_cm) - (5 * 30) + 5;
+            } else { // Female
+                bmr_kcal = (10 * weight_kg) + (6.25 * height_cm) - (5 * 30) - 161;
+            }
+            
+            // TDEE Calculation: BMR * 1.2 (Activity Factor for Sedentary IT Professional)
+            const tdee_kcal = bmr_kcal * 1.2; 
+            let calorie_goal;
+            let goal_text = "";
+
+            if (bmi_class === "Underweight") {
+                // Goal: Moderate surplus for healthy weight gain
+                calorie_goal = tdee_kcal + 300; // Add 300 kcal surplus
+                goal_text = "Bulking/Muscle Gain";
+            } else if (bmi_class === "Normal") {
+                // Goal: Maintenance
+                calorie_goal = tdee_kcal; 
+                goal_text = "Maintenance";
+            } else if (bmi_class === "Overweight" || bmi_class.startsWith("Obese")) {
+                // Goal: Caloric deficit for weight loss
+                calorie_goal = tdee_kcal - 500; // 500 kcal deficit for safe, moderate weight loss
+                goal_text = "Caloric Deficit/Weight Loss";
+            } else {
+                calorie_goal = tdee_kcal;
+                goal_text = "Unknown Goal";
+            }
+
+
+            // Calorie-to-gram conversion factors
+            const PROTEIN_CAL_PER_G = 4;
+            const CARB_CAL_PER_G = 4;
+            const FAT_CAL_PER_G = 9;
+            
+            let protein_g, carbs_ratio, fats_ratio;
+
+            // Macro ratio logic based on BMI class 
+            if (bmi_class === "Underweight") {
+                protein_g = 1.5 * weight_kg; 
+                carbs_ratio = 0.60;
+                fats_ratio = 0.25;
+            } else if (bmi_class === "Normal") {
+                protein_g = 1.2 * weight_kg;
+                carbs_ratio = 0.50;
+                fats_ratio = 0.30;
+            } else if (bmi_class === "Overweight" || bmi_class.startsWith("Obese")) {
+                 // High protein/moderate fat for satiety and muscle sparing during weight loss
+                protein_g = 1.3 * weight_kg; 
+                carbs_ratio = 0.35; 
+                fats_ratio = 0.35; 
+            } else {
+                return null;
+            }
+
+            // Calculate remaining calories after protein minimum is met (Total Goal - Protein Calories)
+            const protein_cal = protein_g * PROTEIN_CAL_PER_G;
+            const remaining_goal_calories = calorie_goal - protein_cal;
+            
+            // Ensure remaining goal calories is positive
+            if (remaining_goal_calories < 0) return null; 
+
+            // Adjust ratios to sum to 1.0 for the remaining calories
+            const total_ratio = carbs_ratio + fats_ratio;
+            const adjusted_carbs_ratio = carbs_ratio / total_ratio;
+            const adjusted_fats_ratio = fats_ratio / total_ratio;
+
+            // Convert remaining goal calories using adjusted ratios
+            const carbs_cal = remaining_goal_calories * adjusted_carbs_ratio;
+            const fats_cal = remaining_goal_calories * adjusted_fats_ratio;
+            
+            const carbohydrates_g = carbs_cal / CARB_CAL_PER_G;
+            const fats_g = fats_cal / FAT_CAL_PER_G;
+
+            return {
+                Protein_g: Math.round(protein_g),
+                Carbohydrates_g: Math.round(carbohydrates_g),
+                Fats_g: Math.round(fats_g),
+                Total_Calories: Math.round(calorie_goal),
+                Goal: goal_text
+            };
+        }
+        
+        /**
+         * Main function to process inputs, simulate API call, and render results.
+         */
+        function processData() {
+            const weight = parseFloat(document.getElementById('weight').value);
+            const height = parseFloat(document.getElementById('height').value);
+            const gender = document.getElementById('gender').value;
+            const messageBox = document.getElementById('messageBox');
+            messageBox.classList.add('hidden'); 
+
+            if (isNaN(weight) || isNaN(height) || weight <= 0 || height <= 0 || height > 3) {
+                messageBox.textContent = "Please enter valid Weight (kg) and Height (m). Height should be less than 3m.";
+                messageBox.classList.remove('hidden');
+                document.getElementById('results-area').classList.add('hidden');
+                return;
+            }
+
+            // 1. Diagnose BMI
+            const bmiResult = classifyBmi(weight, height);
+            const bmiClass = bmiResult.class;
+
+            // 2. Calculate Macros (Simulating Python API response)
+            const macroData = calculateMacros(weight, height, gender, bmiClass);
+
+            if (macroData) {
+                updateDiagnosisDisplay(bmiResult);
+                renderVisualization(macroData);
+                // FIX: Pass macroData to renderRecommendations
+                renderRecommendations(bmiClass, macroData); 
+                document.getElementById('results-area').classList.remove('hidden');
+            } else {
+                 messageBox.textContent = "Calculation failed. Check inputs or classification logic.";
+                 messageBox.classList.remove('hidden');
+                 document.getElementById('results-area').classList.add('hidden');
+            }
+        }
+
+        /**
+         * Generates text recommendations based on BMI class.
+         * FIX: Accept macroData as a second argument (data)
+         */
+        function renderRecommendations(bmiClass, data) { 
+            const recsDiv = document.getElementById('recommendations');
+            const totalCalories = data.Total_Calories; // Use the passed data object
+            let advice = '';
+            let color = '';
+
+            if (bmiClass === "Underweight") {
+                color = 'border-yellow-500 bg-yellow-50';
+                advice = `
+                    <h3 class="font-bold text-yellow-700">Goal: Healthy Weight Gain (+300 kcal Surplus)</h3>
+                    <p class="text-gray-600">Focus on nutrient-dense foods. To meet your high carbohydrate and protein goals, consume frequent, larger meals. Use healthy fats (like nuts and avocados) to easily increase calorie intake without excessive volume.</p>
+                `;
+            } else if (bmiClass === "Normal") {
+                color = 'border-green-500 bg-green-50';
+                advice = `
+                    <h3 class="font-bold text-green-700">Goal: Maintenance (${totalCalories} kcal target)</h3>
+                    <p class="text-gray-600">Your BMI is healthy! Maintain your diet consistency. Prioritize whole foods, vegetables, and fiber. Ensure all ${data.Protein_g}g of protein are spread across your meals for sustained energy and muscle preservation.</p>
+                `;
+            } else if (bmiClass === "Overweight" || bmiClass.startsWith("Obese")) {
+                color = 'border-red-500 bg-red-50';
+                advice = `
+                    <h3 class="font-bold text-red-700">Goal: Caloric Deficit (${totalCalories} kcal target)</h3>
+                    <ul class="list-disc list-inside text-gray-600 space-y-2">
+                        <li>**Minimize Food Volume:** To stay within ${totalCalories} kcal, choose high-volume, low-calorie foods (leafy greens, clear soups).</li>
+                        <li>**Maximize Satiety:** Your plan is high in **Protein** (${data.Protein_g}g). Ensure every meal has a lean protein source (chicken, fish, legumes) to maximize fullness.</li>
+                        <li>**Limit Simple Carbs:** Drastically reduce sugar and refined grains (white bread, pasta) to control blood sugar and reduce hunger spikes.</li>
+                        <li>**Hydration:** Drink a large glass of water before every meal to aid in feeling full.</li>
+                    </ul>
+                `;
+            } else {
+                color = 'border-gray-500 bg-gray-50';
+                advice = `<h3 class="font-bold text-gray-700">Recommendation: Consult a Specialist</h3><p class="text-gray-600">Your classification requires specialized attention. Please consult a nutritionist.</p>`;
+            }
+
+            recsDiv.innerHTML = `<div class="recommendation-card ${color}">${advice}</div>`;
+        }
+
+
+        /**
+         * Updates the BMI Diagnosis card on the UI.
+         */
+        function updateDiagnosisDisplay(bmiResult) {
+            const bmiScoreElement = document.getElementById('bmiScore');
+            const bmiClassElement = document.getElementById('bmiClassOutput');
+            const diagnosisCard = document.getElementById('bmiDiagnosis');
+            
+            bmiScoreElement.textContent = bmiResult.bmi;
+            bmiClassElement.textContent = bmiResult.class;
+            
+            let colorClass = '';
+            if (bmiResult.class === "Underweight") {
+                colorClass = 'bg-yellow-500';
+                diagnosisCard.style.borderColor = '#F59E0B'; 
+            } else if (bmiResult.class === "Normal") {
+                colorClass = 'bg-green-500';
+                diagnosisCard.style.borderColor = '#10B981';
+            } else if (bmiResult.class === "Overweight") {
+                colorClass = 'bg-orange-500';
+                diagnosisCard.style.borderColor = '#F97316';
+            } else if (bmiResult.class.startsWith("Obese")) {
+                colorClass = 'bg-red-600';
+                diagnosisCard.style.borderColor = '#DC2626';
+            } else {
+                colorClass = 'bg-gray-400';
+                diagnosisCard.style.borderColor = '#9CA3AF';
+            }
+
+            bmiClassElement.className = `text-xl font-bold px-3 py-1 rounded-full text-white ${colorClass}`;
+        }
+
+
+        /**
+         * Renders the Donut Chart using Chart.js.
+         */
+        function renderVisualization(data) {
+            const ctx = document.getElementById('macroChart').getContext('2d');
+            
+            const labels = ['Protein (g)', 'Carbohydrates (g)', 'Fats (g)'];
+            const values = [data.Protein_g, data.Carbohydrates_g, data.Fats_g];
+
+            // Update the summary section
+            const summaryHtml = `
+                <div class="flex flex-col items-center">
+                    <span class="text-3xl font-extrabold text-gray-700">${data.Total_Calories}</span>
+                    <span class="text-sm text-gray-600">Target Calories</span>
+                </div>
+                <div class="flex flex-col items-center">
+                    <span class="text-3xl font-extrabold text-red-500">${data.Protein_g}</span>
+                    <span class="text-sm text-gray-600">Protein (g)</span>
+                </div>
+                <div class="flex flex-col items-center">
+                    <span class="text-3xl font-extrabold text-blue-500">${data.Carbohydrates_g}</span>
+                    <span class="text-sm text-gray-600">Carbs (g)</span>
+                </div>
+                <div class="flex flex-col items-center">
+                    <span class="text-3xl font-extrabold text-yellow-500">${data.Fats_g}</span>
+                    <span class="text-sm text-gray-600">Fats (g)</span>
+                </div>
+            `;
+            document.getElementById('gramsSummary').innerHTML = summaryHtml;
+
+
+            // Destroy existing chart if it exists
+            if (macroChart) {
+                macroChart.destroy();
+            }
+
+            // Create new chart
+            macroChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Macronutrients in Grams',
+                        data: values,
+                        backgroundColor: [
+                            'rgb(239 68 68)',   // Red for Protein
+                            'rgb(59 130 246)',  // Blue for Carbs
+                            'rgb(234 179 8)'    // Yellow for Fats
+                        ],
+                        hoverOffset: 8
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                padding: 15,
+                                font: {
+                                    size: 14
+                                }
+                            }
+                        },
+                        title: {
+                            display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.label || '';
+                                    if (label) {
+                                        label += ': ';
+                                    }
+                                    if (context.parsed !== null) {
+                                        label += context.parsed.toFixed(0) + 'g';
+                                    }
+                                    return label;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Run the calculation on page load with default values
+        window.onload = () => {
+             processData();
+        }
+
+    </script>
+</body>
+</html>
